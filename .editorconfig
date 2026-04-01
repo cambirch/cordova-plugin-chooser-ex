@@ -1,0 +1,15 @@
+# top-most EditorConfig file
+root = true
+
+[*]
+# Indentation style (space or tab)
+indent_style = space 
+# Indentation size (number of columns)
+indent_size = 4 
+# Tab width (usually mirrors indent_size)
+tab_width = 4
+# Ensure a newline at the end of files
+insert_final_newline = true 
+# Remove trailing whitespace
+trim_trailing_whitespace = true 
+

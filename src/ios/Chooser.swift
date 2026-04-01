@@ -1,20 +1,31 @@
 import UIKit
 import MobileCoreServices
 import Foundation
-
+import Cordova
 
 class ChooserUIDocumentPickerViewController : UIDocumentPickerViewController {
-	var includeData: Bool = false
+	var multiple: Bool = false
 }
 
 @objc(Chooser)
 class Chooser : CDVPlugin {
 	var commandCallback: String?
 
-	func callPicker (includeData: Bool, utis: [String]) {
+	struct FileInfo: Codable {
+        let mediaType: String
+        let name: String
+        let uri: String
+    }
+
+	func callPicker (multiple: Bool, utis: [String]) {
 		let picker = ChooserUIDocumentPickerViewController(documentTypes: utis, in: .import)
 		picker.delegate = self
-		picker.includeData = includeData
+		picker.multiple = multiple
+
+		if #available(iOS 11.0, *) {
+			picker.allowsMultipleSelection = multiple
+		}
+
 		self.viewController.present(picker, animated: true, completion: nil)
 	}
 
@@ -35,54 +46,76 @@ class Chooser : CDVPlugin {
 		return "application/octet-stream"
 	}
 
-	func documentWasSelected (includeData: Bool, url: URL) {
+	func documentWasSelected (multiple: Bool, urls: [URL]) {
 		var error: NSError?
 
-		NSFileCoordinator().coordinate(
-			readingItemAt: url,
-			options: [],
-			error: &error
-		) { newURL in
-			let maybeData = try? Data(contentsOf: newURL, options: [])
+ 		let coordinator = NSFileCoordinator();
 
-			guard let data = maybeData else {
-				self.sendError("Failed to fetch data.")
-				return
+		if multiple {
+	        var results: [FileInfo] = [];
+
+			for url in urls {
+				coordinator.coordinate(
+					readingItemAt: url,
+					options: [],
+					error: &error
+				) { newURL in
+					let result = FileInfo(
+						mediaType: self.detectMimeType(newURL),
+						name: newURL.lastPathComponent,
+						uri: newURL.absoluteString
+					)
+
+					results.append(result);
+					
+					newURL.stopAccessingSecurityScopedResource()
+				}
+
+				url.stopAccessingSecurityScopedResource()
+			}
+			do {
+				let jsonData = try JSONEncoder().encode(results)
+				let jsonString = String(data: jsonData, encoding: .utf8)!
+				self.send(jsonString)
+			}
+			catch {
+				self.sendError("Serializing result failed.")
 			}
 
-			do {
-				let result = [
-					"data": includeData ? data.base64EncodedString() : "",
-					"mediaType": self.detectMimeType(newURL),
-					"name": newURL.lastPathComponent,
-					"uri": newURL.absoluteString
-				]
+		} else if let url = urls.first {
 
-				if let message = try String(
-					data: JSONSerialization.data(
-						withJSONObject: result,
-						options: []
-					),
-					encoding: String.Encoding.utf8
-				) {
-					self.send(message)
-				}
-				else {
-					self.sendError("Serializing result failed.")
-				}
+			var result: FileInfo?
+
+			coordinator.coordinate(
+				readingItemAt: url,
+				options: [],
+				error: &error
+			) { newURL in
+				result = FileInfo(
+					mediaType: self.detectMimeType(newURL),
+					name: newURL.lastPathComponent,
+					uri: newURL.absoluteString
+				)
 
 				newURL.stopAccessingSecurityScopedResource()
 			}
-			catch let error {
-				self.sendError(error.localizedDescription)
+
+			if let result = result {
+				do {
+					let jsonData = try JSONEncoder().encode(result)
+					let jsonString = String(data: jsonData, encoding: .utf8)!
+					self.send(jsonString)
+				}
+				catch {
+					self.sendError("Serializing result failed.")
+				}
 			}
-		}
 
-		if let error = error {
-			self.sendError(error.localizedDescription)
+			url.stopAccessingSecurityScopedResource()
+		} else {
+			self.sendError("No file selected.")
+			return
 		}
-
-		url.stopAccessingSecurityScopedResource()
 	}
 
 	@objc(getFile:)
@@ -90,7 +123,7 @@ class Chooser : CDVPlugin {
 		self.commandCallback = command.callbackId
 
 		let accept = command.arguments.first as! String
-		let includeData = command.arguments.last as! Bool
+		let multiple = command.arguments.last as! Bool
 		let mimeTypes = accept.components(separatedBy: ",")
 
 		let utis = mimeTypes.map { (mimeType: String) -> String in
@@ -126,7 +159,7 @@ class Chooser : CDVPlugin {
 			return kUTTypeItem as String
 		}
 
-		self.callPicker(includeData: includeData, utis: utis)
+		self.callPicker(multiple: multiple, utis: utis)
 	}
 
 	func send (_ message: String, _ status: CDVCommandStatus = CDVCommandStatus_OK) {
@@ -157,9 +190,7 @@ extension Chooser : UIDocumentPickerDelegate {
 		didPickDocumentsAt urls: [URL]
 	) {
 		let picker = controller as! ChooserUIDocumentPickerViewController
-		if let url = urls.first {
-			self.documentWasSelected(includeData: picker.includeData, url: url)
-		}
+		self.documentWasSelected(multiple: picker.multiple, urls: urls)
 	}
 
 	func documentPicker (
@@ -167,7 +198,7 @@ extension Chooser : UIDocumentPickerDelegate {
 		didPickDocumentAt url: URL
 	) {
 		let picker = controller as! ChooserUIDocumentPickerViewController
-		self.documentWasSelected(includeData: picker.includeData, url: url)
+		self.documentWasSelected(multiple: picker.multiple, urls: [url])
 	}
 
 	func documentPickerWasCancelled (_ controller: UIDocumentPickerViewController) {

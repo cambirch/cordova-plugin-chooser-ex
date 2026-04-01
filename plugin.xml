@@ -2,11 +2,11 @@
 <plugin 
 	xmlns="http://www.phonegap.com/ns/plugins/1.0" 
 	xmlns:android="http://schemas.android.com/apk/res/android" 
-	id="cordova-plugin-chooser" 
-	version="1.3.1"
+	id="cordova-plugin-chooser-ex" 
+	version="2.0.0"
 >	
 	<name>Chooser</name>
-	<author>Cyph, Inc.</author>
+	<author>Asset Pro Solutions Inc.</author>
 
 	<js-module src="www/chooser.js" name="Chooser">
 		<clobbers target="chooser" />
